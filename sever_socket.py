@@ -1,138 +1,94 @@
+import datetime
 from socket import *
-import csv
-import os
-import numpy as np
-import matplotlib.pyplot  as plt
-from scipy.interpolate import interpolate
-from tensorflow import keras
-from tensorflow.keras.models import Model
-from tensorflow.keras import backend as K
-from tensorflow.keras import layers
+import torch
+from torchvision.models import resnet50
+import socket
 
-storeDir = "D:\\pycharmProject\\PAWrite\\PAWrite\\data\\experiment\\10number\\7\\"
-keyWord = ""
-number = 1
+from Huffman_encode_and_decode import *
+### 规定运行设备
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# print(device)
+### 网络部分
+def net_part(image, model_name):
+    if model_name == 'resnet50':
+        model = resnet50(pretrained=True, progress=True)
+        model = model.to(device)
+    return model(image)
 
-homePath = "C:\\Users\\15022\\PycharmProjects\\Server\\"
+def connect_to_client(HOST, PORT, centers, decode_model):
+    decode_model = decode_model.to(device)
+    # 2 定义缓冲区(缓存)
+    BUFFER_SIZE = 1024
 
-labelList = ["+", "D", "G", "M", "U"]
-numberList = ["1", "2", "3", "4", "5"]
-letterList = ["a", "b", "c", "d", "e"]
+    # hostname = socket.gethostname()
+    # HOST = socket.gethostbyname(hostname)
 
-resultList = letterList
-
-
-def normalization(path):
-    ma = max(path)
-    mi = min(path)
-    interval = ma - mi
-    result = []
-    for i in path:
-        result.append((i - mi) / interval)
-    return result
-
-
-# 写CSV
-def writeFile(file, data):
-    f = open(file, 'w', encoding='utf-8', newline='')
-    csv_w = csv.writer(f)
-    for i in data:
-        csv_w.writerow([str(i)])
-    f.close()
-
-
-def quTou2(data, threshold=10):
-    result = data
-
-    #     去头去尾
-    i = 1
-    tou = result[0]
-    wei = result[-1]
-    while i < len(result) - 1:
-        if abs(result[i] - tou) < threshold:
-            del result[i]
-        else:
-            break
-    # 去尾
-    weiThreshold = threshold
-    i = len(result) - 2
-    while i > 0:
-        if abs(result[i] - wei) < weiThreshold:
-            del result[i]
-        else:
-            break
-        i -= 1
-
-    return result
-
-
-def changeLength(list, lenght):
-    x = range(1, len(list) + 1, 1)
-    x = np.array(x)
-    y = np.array(list)
-    f_linear = interpolate.interp1d(x, y, kind="linear")
-    new_x = x = np.linspace(x[0], x[-1], lenght)
-    new_y = f_linear(new_x)
-    return new_y
-
-
-model = keras.models.load_model("best_model_letter.h5")
-
-test1 = ""
-# 1 定义域名和端口号
-HOST, PORT = '192.168.2.26', 12345
-# 2 定义缓冲区(缓存)
-BUFFER_SIZE = 1024
-ADDR = (HOST, PORT)
-# 3 创建服务器套接字 AF_INET:IPv4  SOCK_STREAM:协议
-tcpServerSocket = socket(AF_INET, SOCK_STREAM)
-# 4 绑定域名和端口号
-tcpServerSocket.bind(ADDR)
-# 5 监听连接  最大连接数
-tcpServerSocket.listen(5)
-# 6 定义一个循环 目的:等待客户端的连接
-while True:
-    # 6.1 打开一个客户端对象 同意连接
-    tcpClientSocket, addr = tcpServerSocket.accept()
-    print(addr)
+    print('HOST',HOST)
+    ADDR = (HOST, PORT)
+    # 3 创建服务器套接字 AF_INET:IPv4  SOCK_STREAM:协议
+    tcpServerSocket = socket.socket(AF_INET, SOCK_STREAM)
+    # 4 绑定域名和端口号
+    tcpServerSocket.bind(ADDR)
+    # 5 监听连接最大连接数
+    tcpServerSocket.listen(5)
+    # 6 定义一个循环 目的:等待客户端的连接
     while True:
-        test1 = ""
-        # 6.2 接受数据
-        data = tcpClientSocket.recv(BUFFER_SIZE)
-        # 6.3 解码数据
-        print(data)
+        # 6.1 打开一个客户端对象 同意连接
+        print('*' * 20, 'begin', '*' * 20)
+        tcpClientSocket, addr = tcpServerSocket.accept()
+        # print(addr)
+        temp = ''
+        while True:
+            test1 = ""
+            # 6.2 接受数据
+            print('*' * 20, 'connect', '*' * 20)
+            data = tcpClientSocket.recv(BUFFER_SIZE)
+            # 6.3 数据复原
+            data = data.decode('utf-8')
+            data = data
+            # with torch.autograd.profiler.profile(use_cuda=True) as prof:
+            start1 = datetime.datetime.now()
+            if data != None:
+                temp += data
+                # print(len(temp))
+                if data[-1] == ']' and data[-2] == ']':
+                    huffman_out, codes, outshape = eval(temp)
+                    temp = ''
+                else:
+                    continue
+                # # 6.3 解码huffman数据
+            data_decode = huffman_decode(huffman_out[1:], centers, codes)
+            data_decode = data_decode.to(device)
+            end1 = datetime.datetime.now()
+            print('Huffman decode results:',end1-start1)
+            # print(prof.key_averages().table(sort_by="self_cpu_time_total"))
+            # with torch.autograd.profiler.profile(use_cuda=True) as prof:
+            print('data_decode', data_decode.shape)
+                # [1,N*C*w*h] → [N,C,w,h]
+            origin_str = data_decode.view(outshape[0],
+                                              outshape[1],
+                                              outshape[2],
+                                              outshape[3])
+                # # 6.4 经过decoder进行数据解码
+            out = decode_model(origin_str)
+            end2 = datetime.datetime.now()
+            print('Decoder results:',end2-end1)
+            # print(prof.key_averages().table(sort_by="self_cpu_time_total"))
+            # # 6.5 解码后数据传入网络后半部分
+            # with torch.autograd.profiler.profile(use_cuda=True) as prof:
+            results = net_part(out,'resnet50')
+            predict = list(results.argmax(dim=1, keepdim=True))
+            end3 = datetime.datetime.now()
+            print('Net results:',end3-end2)
+            # print(prof.key_averages().table(sort_by="self_cpu_time_total"))
+            # results = 'I am the sever'
+            # 返回结果给客户端
+            tcpClientSocket.send(str(predict).encode('utf-8'))
+            # tcpClientSocket.send(str(results).encode('utf-8'))
+            # print(results)
 
-        # data2 = data.decode('utf-8')
-        # data3 = data2.split(" ")
-        # data4 = []
-        # for i in data3:
-        #     data4.append(int(i))
-        # # data4里面是数据
-        # writeFile( storeDir + keyWord + str(number) + ".csv", data4 )
-        # number += 1
-        #
-        #
-        #
-        #
-        # plt.cla()
-        # # plt.figure()
-        # plt.plot( changeLength( normalization(data4),256), '-b', linewidth=5.0)
-        #
-        # data4 = quTou2((data4))
-        # data4 = normalization(data4)
-        # data = changeLength(data4 , 256)
-        #
-        #
-        # plt.plot(data , '-r' ,  linewidth=5.0)
-        # plt.show()
-        #
-        # data = np.array([data])
-        # predictResult =np.argmax( model.predict(data) , axis=1)
-        #
-        #
-        # print('result', resultList[predictResult[0] ])
-        break
-    tcpClientSocket.send(test1.encode())
-    # 7 关闭资源
-    tcpClientSocket.close()
-tcpServerSocket.close()
+        # 7 关闭资源
+            tcpClientSocket.close()
+            break
+
+    tcpServerSocket.close()

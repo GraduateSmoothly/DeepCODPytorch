@@ -1,5 +1,6 @@
 ##################### huffman编码 ########################
 import operator
+import torch
 # 统计字符出现频率，生成映射表
 def count_frequency(text):
     chars = []
@@ -21,10 +22,11 @@ def count_frequency2(tensor_BCM):
     ret = []
 
     for data in tensor_BCM:
-        if str(data.tolist()) in chars.keys():
-            chars[str(data.tolist())] += 1
-        else:
-            chars[str(data.tolist())] = 1
+        for x in data:
+            if str(x.tolist()) in chars.keys():
+                chars[str(x.tolist())] += 1
+            else:
+                chars[str(x.tolist())] = 1
     for x in chars.keys():
         ret.append((eval(x), chars[x]))
     return ret
@@ -43,8 +45,8 @@ class Node:
 
 
 # 创建叶子节点
-def create_nodes(frequency_list):
-    return [Node(frequency) for frequency in frequency_list]
+# def create_nodes(frequency_list):
+#     return [Node(frequency) for frequency in frequency_list]
 
 
 # 创建Huffman树
@@ -93,55 +95,66 @@ def huffman_encoding(nodes, root):
 def encode_str(text, char_frequency, codes):
     ret = ''
     for char in text:
-        i = 0
-        for item in char_frequency:
+        for x in char:
+            i = 0
+            for item in char_frequency:
             # 字符串
             # if char == item[0]:
             # tensor
             # print(char)
             # print(item[0])
-            if operator.eq(char.tolist(),item[0]):
-                ret += codes[i]
+                if operator.eq(x.tolist(),item[0]):
+                    ret += codes[i]
                 # print('come in')
-            i += 1
+                i += 1
 
     return ret
 
 
+
+# 编码整个字符串
+def huffman_encode(text):
+    # [B,C,w,h] → [B*C,w*h]
+    text = text.view(text.shape[0]*text.shape[1],-1)
+    ### 得到映射表
+    char_frequency = count_frequency2(text)
+    # print("char_frequency",char_frequency)
+    ### 生成节点列表
+
+    nodes = [Node(frequency) for frequency in [item[1] for item in char_frequency]]
+    root = create_huffman_tree(nodes)
+    codes = huffman_encoding(nodes, root)
+    # print("codes",codes)
+    huffman_str = encode_str(text, char_frequency, codes)
+    return huffman_str, codes
+
+
 # 解码整个字符串
-def decode_str(huffman_str, char_frequency, codes):
+def huffman_decode(huffman_str, centers, codes):
     ret = []
     while huffman_str != '':
         i = 0
         for item in codes:
             if item in huffman_str and huffman_str.index(item) == 0:
-                ret.append(char_frequency[i][0])
+                ret.append(centers[i])
                 huffman_str = huffman_str[len(item):]
             i += 1
 
     return torch.FloatTensor(ret)
 
-def huffman_encode_decode(text):
-    text = text.view(text.shape[0]*text.shape[1],-1)
-    ### 得到映射表
-    char_frequency = count_frequency2(text)
-    # print(char_frequency)
-    ### 生成节点列表
-    nodes = create_nodes([item[1] for item in char_frequency])
-    root = create_huffman_tree(nodes)
-    codes = huffman_encoding(nodes, root)
-    # print(codes)
-    huffman_str = encode_str(text, char_frequency, codes)
-    origin_str = decode_str(huffman_str, char_frequency, codes)
-    return huffman_str, origin_str
 
 
-if __name__ == '__main__':
-    # text = 'The text to encode:'
-    import torch
-    # text = torch.FloatTensor([[1,2],[4,5],[1,2]])
-    text= torch.rand(2,2,3)
-    huffman_str, origin_str = huffman_encode_decode(text)
-    origin_str = origin_str.view(text.shape[0],text.shape[1],-1)
-    print(origin_str)
-    print(text.equal(origin_str))
+# if __name__ == '__main__':
+#     # text = 'The text to encode:'
+#     import torch
+#     # text = torch.FloatTensor([[1,2],[4,5],[1,2]])
+#     text= torch.FloatTensor([[[[1],[2],[3]],[[4],[5],[6]],[[1],[2],[3]],[[7],[8],[9]]]])
+#     centers = [1,2,3,4,5,6,7,8,9]
+#     huffman_str, codes = huffman_encode(text)
+#     origin_str = huffman_decode(huffman_str, centers, codes)
+#     batch_num = text.shape[0]
+#     print(text.shape)
+#     origin_str = origin_str.view(batch_num,origin_str.shape[0]//(batch_num*text.shape[2]*text.shape[3]),text.shape[2],-1)
+#     print(huffman_str)
+#     print(origin_str)
+#     print(text.equal(origin_str))
